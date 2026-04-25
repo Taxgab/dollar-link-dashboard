@@ -29,6 +29,7 @@ REFRESH_INTERVAL = 60  # segundos
 # ── Proxies para APIs ────────────────────────────────────────────────────────
 DATA912_BASE = "https://data912.com"
 DOLAR_API_BASE = "https://dolarapi.com"
+BCRA_API_BASE = "https://api.bcra.gob.ar/estadisticas/v4.0"
 
 # ── Instrumentos Dollar Link a trackear ──────────────────────────────────────
 DL_INSTRUMENTS = ["D30A6", "D30S6", "TZV26", "TZV27", "TZV28", "TZV7D"]
@@ -74,6 +75,56 @@ def fetch_all_dolares() -> list:
     return data if isinstance(data, list) else []
 
 
+def get_dolar_types() -> dict:
+    """Trae dólar MEP, CCL y Blue."""
+    dolares = fetch_all_dolares()
+    result = {}
+    for d in dolares:
+        t = d.get("casa", "").lower()
+        if t == "bolsa":
+            result["mep"] = d.get("venta") or 0
+        elif t == "contadoconliqui":
+            result["ccl"] = d.get("venta") or 0
+        elif t == "blue":
+            result["blue"] = d.get("venta") or 0
+    return result
+
+
+def fetch_rem_inflacion() -> dict:
+    """Trae expectativas de inflación del REM (BCRA).
+    ID 29 = Mediana variación interanual IPC próximos 12 meses (REM).
+    Retorna {mes_siguiente, tc_actual, prox_12_meses} con valores en %.
+    """
+    result = {"mes_siguiente": None, "prox_12_meses": None, "ultimo_rem": None, "fecha": None}
+    try:
+        # ID 29: REM mediana interanual próximos 12 meses
+        url = f"{BCRA_API_BASE}/monetarias/29?limit=3"
+        data = fetch_json(url, timeout=15)
+        if data and data.get("results"):
+            entries = data["results"][0].get("detalle", [])
+            if entries:
+                latest = entries[0]
+                result["prox_12_meses"] = latest.get("valor")
+                result["fecha"] = latest.get("fecha")
+    except Exception:
+        pass
+
+    try:
+        # ID 27: Inflación mensual IPC (mes siguiente)
+        url2 = f"{BCRA_API_BASE}/monetarias/27?limit=2"
+        data2 = fetch_json(url2, timeout=15)
+        if data2 and data2.get("results"):
+            entries2 = data2["results"][0].get("detalle", [])
+            if len(entries2) > 1:
+                result["mes_siguiente"] = entries2[1].get("valor")
+            elif entries2:
+                result["mes_siguiente"] = entries2[0].get("valor")
+    except Exception:
+        pass
+
+    return result
+
+
 def assemble_dollar_link_data() -> dict:
     """Consolida datos de instrumentos dollar link."""
     bonds = {b["symbol"]: b for b in fetch_bonds_panel()}
@@ -82,6 +133,13 @@ def assemble_dollar_link_data() -> dict:
 
     dolar = fetch_dolar_oficial() or {}
     dolar_oficial_venta = dolar.get("venta", 0) or 0
+    dolares = get_dolar_types()
+    mep = dolares.get("mep", 0) or 0
+    ccl = dolares.get("ccl", 0) or 0
+
+    # REM inflación
+    rem = fetch_rem_inflacion()
+    prox_12_meses = rem.get("prox_12_meses")  # % inflación esperada 12m
 
     rows = []
     for sym in DL_INSTRUMENTS:
@@ -94,7 +152,10 @@ def assemble_dollar_link_data() -> dict:
                 "bid": None,
                 "ask": None,
                 "volume": None,
-                "usd_price": None,
+                "usd_price_oficial": None,
+                "usd_price_mep": None,
+                "usd_price_ccl": None,
+                "usd_fair_value_rem": None,
                 "tipo": "bono" if sym.startswith("TZV") else "letra",
             })
             continue
@@ -105,7 +166,16 @@ def assemble_dollar_link_data() -> dict:
         ask = item.get("px_ask", 0) or 0
         vol = item.get("v", 0) or 0
 
-        usd_price = round(last / dolar_oficial_venta, 2) if dolar_oficial_venta else None
+        usd_oficial = round(last / dolar_oficial_venta, 2) if dolar_oficial_venta else None
+        usd_mep = round(last / mep, 2) if mep else None
+        usd_ccl = round(last / ccl, 2) if ccl else None
+
+        # Fair value: con devaluación esperada del REM, el TC sube y el USD price baja
+        # fair_usd = usd_oficial / (1 + inf_rem/100)
+        if usd_oficial and prox_12_meses:
+            usd_fair = round(usd_oficial / (1 + prox_12_meses / 100), 2)
+        else:
+            usd_fair = None
 
         rows.append({
             "symbol": sym,
@@ -114,7 +184,10 @@ def assemble_dollar_link_data() -> dict:
             "bid": bid,
             "ask": ask,
             "volume": vol,
-            "usd_price": usd_price,
+            "usd_price_oficial": usd_oficial,
+            "usd_price_mep": usd_mep,
+            "usd_price_ccl": usd_ccl,
+            "usd_fair_value_rem": usd_fair,
             "tipo": "bono" if sym.startswith("TZV") else "letra",
         })
 
@@ -125,22 +198,38 @@ def assemble_dollar_link_data() -> dict:
             "venta": dolar.get("venta"),
             "fecha": dolar.get("fechaActualizacion"),
         },
+        "dolar_mep": mep,
+        "dolar_ccl": ccl,
+        "dolar_blue": dolares.get("blue", 0),
+        "rem": {
+            "inflacion_mes_siguiente": rem.get("mes_siguiente"),
+            "inflacion_prox_12_meses": prox_12_meses,
+            "fecha": rem.get("fecha"),
+        },
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
 def get_market_summary() -> dict:
-    """Info de mercado: MEP, CCL, Blue."""
+    """Info de mercado: Oficial, MEP, CCL, Blue."""
     dolares = fetch_all_dolares()
+    oficial = fetch_dolar_oficial()
     result = {}
     for d in dolares:
-        t = d.get("casa", "")
-        if t in ("Bolsa", "contadoconliqui", "blue"):
-            result[t] = {
+        t = d.get("casa", "").lower()
+        if t in ("bolsa", "contadoconliqui", "blue"):
+            key = "Bolsa" if t == "bolsa" else t
+            result[key] = {
                 "compra": d.get("compra"),
                 "venta": d.get("venta"),
                 "fecha": d.get("fechaActualizacion"),
             }
+    if oficial:
+        result["oficial"] = {
+            "compra": oficial.get("compra"),
+            "venta": oficial.get("venta"),
+            "fecha": oficial.get("fechaActualizacion"),
+        }
     return result
 
 
@@ -319,6 +408,16 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <!-- Dólar Overview -->
 <div class="cards-row" id="cards-dolar"></div>
 
+<!-- REM Info -->
+<div id="rem-info" class="rem-banner" style="display:none; margin-bottom:24px; padding:12px 18px; background:#161b22; border:1px solid #30363d; border-radius:10px; font-size:0.82rem; color:#8b949e;">
+  <span style="color:#58a6ff;font-weight:600;">REM Inflación esperada:</span>
+  Mes próximo: <span id="rem-mes" style="color:#f0f6fc;font-family:'Courier New',monospace;">—</span>
+  &nbsp;|&nbsp;
+  Próx. 12 meses: <span id="rem-12m" style="color:#f0f6fc;font-family:'Courier New',monospace;">—</span>
+  &nbsp;|&nbsp;
+  <span style="font-size:0.72rem;">Fuente: BCRA REM · Actualizado: <span id="rem-fecha">—</span></span>
+</div>
+
 <!-- Instruments Table -->
 <div class="section-title">📈 Instrumentos Dollar Link — Tesoro Nacional</div>
 <table id="tbl-instruments">
@@ -330,7 +429,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <th>Var%</th>
       <th>Bid</th>
       <th>Ask</th>
-      <th>USD equivalente</th>
+      <th>USD Oficial</th>
+      <th>USD MEP</th>
+      <th>USD CCL</th>
+      <th>USD Fair (REM)</th>
       <th>Volumen</th>
     </tr>
   </thead>
@@ -374,8 +476,8 @@ function tsLocal(iso) {
 }
 
 function renderDolarCards(dolares) {
-  const tipoLabel = {"Bolsa":"Dólar MEP","contadoconliqui":"CCL","blue":"Blue"};
-  const tipoColor = {"Bolsa":"#58a6ff","contadoconliqui":"#f85149","blue":"#d29922"};
+  const tipoLabel = {"oficial":"Dólar Oficial","Bolsa":"Dólar MEP","contadoconliqui":"CCL","blue":"Blue"};
+  const tipoColor = {"oficial":"#3fb950","Bolsa":"#58a6ff","contadoconliqui":"#f85149","blue":"#d29922"};
   let html = "";
   for (const [k,v] of Object.entries(dolares)) {
     const lbl = tipoLabel[k] || k;
@@ -390,7 +492,6 @@ function renderDolarCards(dolares) {
 }
 
 function renderInstruments(data) {
-  const oficial = data.dolar_oficial?.venta;
   document.getElementById("ts").textContent = tsLocal(data.timestamp);
 
   let html = "";
@@ -407,7 +508,10 @@ function renderInstruments(data) {
       <td class="${pClass}">${pctSign(pct)}</td>
       <td class="mono">$${fmt(row.bid)}</td>
       <td class="mono">$${fmt(row.ask)}</td>
-      <td class="mono">${row.usd_price != null ? "USD " + fmt(row.usd_price) : "—"}</td>
+      <td class="mono">${row.usd_price_oficial != null ? "USD " + fmt(row.usd_price_oficial) : "—"}</td>
+      <td class="mono">${row.usd_price_mep != null ? "USD " + fmt(row.usd_price_mep) : "—"}</td>
+      <td class="mono">${row.usd_price_ccl != null ? "USD " + fmt(row.usd_price_ccl) : "—"}</td>
+      <td class="mono">${row.usd_fair_value_rem != null ? "USD " + fmt(row.usd_fair_value_rem) : "—"}</td>
       <td class="vol">${fmtVol(row.volume)}</td>
     </tr>`;
   }
@@ -422,9 +526,22 @@ async function loadData() {
     const resDol = await fetch("/api/market-summary");
     const dol = await resDol.json();
     renderDolarCards(dol);
+
+    // REM banner
+    const rem = data.rem || {};
+    const remEl = document.getElementById("rem-info");
+    if (remEl) {
+      remEl.style.display = "block";
+      const mesEl = document.getElementById("rem-mes");
+      const m12El = document.getElementById("rem-12m");
+      const fecEl = document.getElementById("rem-fecha");
+      if (mesEl) mesEl.textContent = rem.inflacion_mes_siguiente != null ? rem.inflacion_mes_siguiente.toFixed(1) + "%" : "—";
+      if (m12El) m12El.textContent = rem.inflacion_prox_12_meses != null ? rem.inflacion_prox_12_meses.toFixed(1) + "%" : "—";
+      if (fecEl) fecEl.textContent = rem.fecha || "—";
+    }
   } catch(e) {
     console.error(e);
-    document.getElementById("tbody").innerHTML = `<tr><td colspan="8" style="text-align:center;color:#f85149;padding:20px;">Error al cargar datos: ${e.message}</td></tr>`;
+    document.getElementById("tbody").innerHTML = `<tr><td colspan="11" style="text-align:center;color:#f85149;padding:20px;">Error al cargar datos: ${e.message}</td></tr>`;
   }
 }
 

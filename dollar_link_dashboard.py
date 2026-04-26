@@ -777,7 +777,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   }
   .chart-container {
     position: relative;
-    height: 380px;
+    height: 420px;
     background: var(--bg-surface);
     border: 1px solid var(--border);
     border-radius: 12px;
@@ -1013,48 +1013,67 @@ function renderInstruments(data) {
 }
 
 function renderChart(data) {
-  const ctx = document.getElementById('remChart');
-  if (!ctx) return;
+  const canvas = document.getElementById('remChart');
+  if (!canvas) { console.error('Canvas remChart no encontrado'); return; }
+  const ctx = canvas.getContext('2d');
 
-  const labels = ['Dólar Oficial', ...data.instruments.map(i => i.symbol)];
-  const currentValues = [data.dolar_oficial.venta, ...data.instruments.map(i => i.last)];
-  const projectedValues = [data.rem_forward_tc, ...data.instruments.map(i => i.rem_adjusted_ars)];
-
-  if (window.remChartInstance) {
-    window.remChartInstance.data.labels = labels;
-    window.remChartInstance.data.datasets[0].data = currentValues;
-    window.remChartInstance.data.datasets[1].data = projectedValues;
-    window.remChartInstance.update();
+  // Preparar datos: solo instrumentos que tengan ambos valores
+  const validInstruments = data.instruments.filter(i => i.last != null && i.rem_adjusted_ars != null);
+  if (validInstruments.length === 0 && !(data.dolar_oficial && data.dolar_oficial.venta && data.rem_forward_tc)) {
+    console.warn('Datos insuficientes para el gráfico REM');
     return;
   }
 
-  window.remChartInstance = new Chart(ctx.getContext('2d'), {
-    type: 'line',
+  const labels = [];
+  const currentValues = [];
+  const projectedValues = [];
+
+  // Agregar dólar oficial si tenemos datos
+  if (data.dolar_oficial && data.dolar_oficial.venta && data.rem_forward_tc) {
+    labels.push('Dólar Oficial');
+    currentValues.push(data.dolar_oficial.venta);
+    projectedValues.push(data.rem_forward_tc);
+  }
+
+  // Agregar instrumentos
+  validInstruments.forEach(i => {
+    labels.push(i.symbol);
+    currentValues.push(i.last);
+    projectedValues.push(i.rem_adjusted_ars);
+  });
+
+  // Destruir instancia previa si existe
+  if (window.remChartInstance) {
+    window.remChartInstance.destroy();
+    window.remChartInstance = null;
+  }
+
+  window.remChartInstance = new Chart(ctx, {
+    type: 'bar',
     data: {
       labels: labels,
       datasets: [
         {
           label: 'Valor Actual (ARS)',
           data: currentValues,
+          backgroundColor: 'rgba(71, 85, 105, 0.85)',
           borderColor: '#475569',
-          backgroundColor: '#475569',
-          borderWidth: 2,
-          tension: 0.4,
-          pointRadius: 4,
-          pointHoverRadius: 6,
-          pointBackgroundColor: '#0a0a0f'
+          borderWidth: 1,
+          borderRadius: 4,
+          borderSkipped: false,
+          barPercentage: 0.7,
+          categoryPercentage: 0.8
         },
         {
           label: 'Proyección REM 12m (ARS)',
           data: projectedValues,
+          backgroundColor: 'rgba(212, 175, 55, 0.85)',
           borderColor: '#d4af37',
-          backgroundColor: '#d4af37',
-          borderWidth: 2,
-          borderDash: [6, 4],
-          tension: 0.4,
-          pointRadius: 4,
-          pointHoverRadius: 6,
-          pointBackgroundColor: '#0a0a0f'
+          borderWidth: 1,
+          borderRadius: 4,
+          borderSkipped: false,
+          barPercentage: 0.7,
+          categoryPercentage: 0.8
         }
       ]
     },
@@ -1064,11 +1083,15 @@ function renderChart(data) {
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: {
+          position: 'top',
+          align: 'end',
           labels: {
             color: '#e2e8f0',
             font: { family: 'JetBrains Mono', size: 12 },
             usePointStyle: true,
-            boxWidth: 8
+            pointStyle: 'rectRounded',
+            boxWidth: 10,
+            padding: 16
           }
         },
         tooltip: {
@@ -1077,10 +1100,11 @@ function renderChart(data) {
           bodyColor: '#e2e8f0',
           borderColor: 'rgba(255,255,255,0.1)',
           borderWidth: 1,
-          titleFont: { family: 'JetBrains Mono', size: 13 },
+          titleFont: { family: 'JetBrains Mono', size: 13, weight: '700' },
           bodyFont: { family: 'JetBrains Mono', size: 12 },
-          padding: 12,
+          padding: 14,
           displayColors: true,
+          cornerRadius: 6,
           callbacks: {
             label: function(context) {
               let label = context.dataset.label || '';
@@ -1095,8 +1119,11 @@ function renderChart(data) {
       },
       scales: {
         x: {
-          grid: { color: 'rgba(255,255,255,0.03)' },
-          ticks: { color: '#475569', font: { family: 'JetBrains Mono', size: 11 } }
+          grid: { display: false },
+          ticks: {
+            color: '#475569',
+            font: { family: 'JetBrains Mono', size: 11, weight: '600' }
+          }
         },
         y: {
           grid: { color: 'rgba(255,255,255,0.03)' },
@@ -1108,7 +1135,8 @@ function renderChart(data) {
               if (value >= 1e3) return '$' + (value/1e3).toFixed(0) + 'K';
               return '$' + value;
             }
-          }
+          },
+          beginAtZero: true
         }
       }
     }

@@ -889,7 +889,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <span class='value' id='badlar-ars'>—</span>
         </div>
         <div class='context-stat'>
-          <span class='label'>US Treasury 6M</span>
+          <span class='label'>USD Riesgo Libre</span>
           <span class='value' id='badlar-usd'>—</span>
           <span class='sub' id='badlar-usd-source'>—</span>
         </div>

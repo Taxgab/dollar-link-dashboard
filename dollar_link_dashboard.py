@@ -26,10 +26,17 @@ PORT = 9120
 HOST = "0.0.0.0"
 REFRESH_INTERVAL = 60  # segundos
 
-# ── Proxies para APIs ────────────────────────────────────────────────────────
+# ── APIs ───────────────────────────────────────────────────────────────────────
 DATA912_BASE = "https://data912.com"
 DOLAR_API_BASE = "https://dolarapi.com"
 BCRA_API_BASE = "https://api.bcra.gob.ar/estadisticas/v4.0"
+
+# ── US Treasury yield curve (riesgo libre) ─────────────────────────────────────
+TREASURY_YIELD_CURVE_URL = (
+    "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/"
+    "daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&"
+    "field_tdr_date_value=2026&download=true"
+)
 
 # ── Instrumentos Dollar Link a trackear ──────────────────────────────────────
 DL_INSTRUMENTS = ["D30A6", "D30S6", "TZV26", "TZV27", "TZV28"]
@@ -126,16 +133,47 @@ def fetch_rem_inflacion() -> dict:
     return result
 
 
+def fetch_treasury_yield() -> Optional[dict]:
+    """Trae el yield de US Treasury a 6 meses (riesgo libre)."""
+    try:
+        r = requests.get(TREASURY_YIELD_CURVE_URL, timeout=15)
+        if r.status_code != 200:
+            return None
+        lines = r.text.strip().split("\n")
+        if len(lines) < 2:
+            return None
+        headers = [h.strip().strip('"') for h in lines[0].split(",")]
+        # Buscar columna "6 Mo"
+        col_6m = None
+        for i, h in enumerate(headers):
+            if h == "6 Mo":
+                col_6m = i
+                break
+        if col_6m is None:
+            return None
+        # Última fila = fecha más reciente
+        last_line = lines[1].split(",")
+        yield_6m = float(last_line[col_6m].strip().strip('"'))
+        date_str = last_line[0].strip().strip('"')
+        return {"yield_6m": yield_6m, "date": date_str}
+    except Exception:
+        return None
+
+
 def fetch_badlar() -> dict:
-    """Trae última BADLAR bancos privados (ID 7) y tasa USD implícita (~5%)."""
-    BADLAR_USD = 5.0  # Tasa anual USD aprox (Fed Funds ~5%)
+    """Trae BADLAR (ID 7, BCRA) y US Treasury 6M (riesgo libre)."""
+    treasury = fetch_treasury_yield()
+    tasa_usd = treasury["yield_6m"] if treasury else 5.0
+    treasury_date = treasury["date"] if treasury else None
     entries = fetch_bcra_variable(7, 3)
     if not entries:
-        return {"badlar": None, "tasa_usd": BADLAR_USD, "fecha": None}
+        return {"badlar": None, "tasa_usd": tasa_usd, "tasa_usd_source": "fallback", "badlar_fecha": None, "treasury_date": treasury_date}
     return {
         "badlar": entries[0].get("valor"),
-        "tasa_usd": BADLAR_USD,
-        "fecha": entries[0].get("fecha"),
+        "tasa_usd": tasa_usd,
+        "tasa_usd_source": "US Treasury 6M",
+        "badlar_fecha": entries[0].get("fecha"),
+        "treasury_date": treasury_date,
     }
 
 
@@ -240,7 +278,9 @@ def assemble_dollar_link_data() -> dict:
         "badlar": {
             "tasa_ars": badlar,
             "tasa_usd": tasa_usd,
-            "fecha": badlar_data.get("fecha"),
+            "tasa_usd_source": badlar_data.get("tasa_usd_source"),
+            "badlar_fecha": badlar_data.get("badlar_fecha"),
+            "treasury_date": badlar_data.get("treasury_date"),
         },
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
@@ -582,6 +622,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     color: var(--text-primary);
   }
 
+  .context-stat .sub {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
   /* Instruments */
   .instruments-section {
     animation: fadeInUp 0.8s 0.3s ease-out both;
@@ -820,8 +866,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <span class='value' id='badlar-ars'>—</span>
         </div>
         <div class='context-stat'>
-          <span class='label'>Tasa USD</span>
+          <span class='label'>US Treasury 6M</span>
           <span class='value' id='badlar-usd'>—</span>
+          <span class='sub' id='badlar-usd-source'>—</span>
         </div>
         <div class='context-stat'>
           <span class='label'>Fecha</span>
@@ -958,8 +1005,9 @@ async function loadData() {
     if (badlarEl) {
       badlarEl.style.display = 'block';
       document.getElementById('badlar-ars').textContent = badlar.tasa_ars != null ? badlar.tasa_ars.toFixed(2) + '%' : '—';
-      document.getElementById('badlar-usd').textContent = badlar.tasa_usd != null ? badlar.tasa_usd.toFixed(1) + '%' : '—';
-      document.getElementById('badlar-fecha').textContent = badlar.fecha || '—';
+      document.getElementById('badlar-usd').textContent = badlar.tasa_usd != null ? badlar.tasa_usd.toFixed(2) + '%' : '—';
+      document.getElementById('badlar-usd-source').textContent = badlar.tasa_usd_source || '—';
+      document.getElementById('badlar-fecha').textContent = badlar.badlar_fecha || badlar.treasury_date || '—';
     }
   } catch(e) {
     console.error(e);

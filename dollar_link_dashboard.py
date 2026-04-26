@@ -206,6 +206,12 @@ def assemble_dollar_link_data() -> dict:
         else:
             usd_fair_badlar = None
 
+        # Valor teórico en pesos ajustado por inflación REM 12m
+        if last and prox_12_meses:
+            rem_adjusted_ars = round(last * (1 + prox_12_meses / 100), 2)
+        else:
+            rem_adjusted_ars = None
+
         rows.append({
             "symbol": sym,
             "last": last,
@@ -218,6 +224,7 @@ def assemble_dollar_link_data() -> dict:
             "usd_price_ccl": usd_ccl,
             "usd_fair_value_rem": usd_fair_rem,
             "usd_fair_value_badlar": usd_fair_badlar,
+            "rem_adjusted_ars": rem_adjusted_ars,
             "maturity": VENCIMIENTOS.get(sym),
             "tipo": "bono" if sym.startswith("TZV") else "letra",
         })
@@ -232,6 +239,7 @@ def assemble_dollar_link_data() -> dict:
         "dolar_mep": mep,
         "dolar_ccl": ccl,
         "dolar_blue": dolares.get("blue", 0),
+        "rem_forward_tc": round(dolar_oficial_venta * (1 + prox_12_meses / 100), 2) if (dolar_oficial_venta and prox_12_meses) else None,
         "rem": {
             "inflacion_mes_siguiente": rem.get("mes_siguiente"),
             "inflacion_prox_12_meses": prox_12_meses,
@@ -292,6 +300,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <link rel='preconnect' href='https://fonts.googleapis.com'>
 <link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
 <link href='https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap' rel='stylesheet'>
+<script src='https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js'></script>
 <style>
   :root {
     --bg-void: #030303;
@@ -715,6 +724,20 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     background: var(--gold-dim);
   }
 
+  /* Chart Section */
+  .chart-section {
+    animation: fadeInUp 0.8s 0.4s ease-out both;
+    margin-top: 48px;
+  }
+  .chart-container {
+    position: relative;
+    height: 380px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+  }
+
   /* Scrollbar */
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: var(--bg-void); }
@@ -855,6 +878,13 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     </table>
   </div>
 
+  <div class='chart-section'>
+    <div class='section-label'>Proyección REM 12 Meses</div>
+    <div class='chart-container'>
+      <canvas id='remChart'></canvas>
+    </div>
+  </div>
+
   <div class='footer'>
     <span>Fuentes: Data912 · DolarAPI · BCRA. Datos referenciales.</span>
     <button class='refresh-btn' onclick='loadData()'>↻ Refrescar</button>
@@ -935,11 +965,115 @@ function renderInstruments(data) {
   document.getElementById('tbody').innerHTML = html;
 }
 
+function renderChart(data) {
+  const ctx = document.getElementById('remChart');
+  if (!ctx) return;
+
+  const labels = ['Dólar Oficial', ...data.instruments.map(i => i.symbol)];
+  const currentValues = [data.dolar_oficial.venta, ...data.instruments.map(i => i.last)];
+  const projectedValues = [data.rem_forward_tc, ...data.instruments.map(i => i.rem_adjusted_ars)];
+
+  if (window.remChartInstance) {
+    window.remChartInstance.data.labels = labels;
+    window.remChartInstance.data.datasets[0].data = currentValues;
+    window.remChartInstance.data.datasets[1].data = projectedValues;
+    window.remChartInstance.update();
+    return;
+  }
+
+  window.remChartInstance = new Chart(ctx.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Valor Actual (ARS)',
+          data: currentValues,
+          borderColor: '#475569',
+          backgroundColor: '#475569',
+          borderWidth: 2,
+          tension: 0.4,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          pointBackgroundColor: '#0a0a0f'
+        },
+        {
+          label: 'Proyección REM 12m (ARS)',
+          data: projectedValues,
+          borderColor: '#d4af37',
+          backgroundColor: '#d4af37',
+          borderWidth: 2,
+          borderDash: [6, 4],
+          tension: 0.4,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          pointBackgroundColor: '#0a0a0f'
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          labels: {
+            color: '#e2e8f0',
+            font: { family: 'JetBrains Mono', size: 12 },
+            usePointStyle: true,
+            boxWidth: 8
+          }
+        },
+        tooltip: {
+          backgroundColor: '#0a0a0f',
+          titleColor: '#d4af37',
+          bodyColor: '#e2e8f0',
+          borderColor: 'rgba(255,255,255,0.1)',
+          borderWidth: 1,
+          titleFont: { family: 'JetBrains Mono', size: 13 },
+          bodyFont: { family: 'JetBrains Mono', size: 12 },
+          padding: 12,
+          displayColors: true,
+          callbacks: {
+            label: function(context) {
+              let label = context.dataset.label || '';
+              if (label) label += ': ';
+              if (context.parsed.y != null) {
+                label += '$' + context.parsed.y.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+              }
+              return label;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(255,255,255,0.03)' },
+          ticks: { color: '#475569', font: { family: 'JetBrains Mono', size: 11 } }
+        },
+        y: {
+          grid: { color: 'rgba(255,255,255,0.03)' },
+          ticks: {
+            color: '#475569',
+            font: { family: 'JetBrains Mono', size: 11 },
+            callback: function(value) {
+              if (value >= 1e6) return '$' + (value/1e6).toFixed(1) + 'M';
+              if (value >= 1e3) return '$' + (value/1e3).toFixed(0) + 'K';
+              return '$' + value;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
 async function loadData() {
   try {
     const r = await fetch('/api/dollar-link');
     const data = await r.json();
     renderInstruments(data);
+    renderChart(data);
     const resDol = await fetch('/api/market-summary');
     const dol = await resDol.json();
     renderDolarCards(dol);

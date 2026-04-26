@@ -284,331 +284,689 @@ app.add_middleware(
 # ── HTML Dashboard ────────────────────────────────────────────────────────────
 
 DASHBOARD_HTML = """<!DOCTYPE html>
-<html lang="es">
+<html lang='es'>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0'>
 <title>Dollar Link AR — Dashboard</title>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap' rel='stylesheet'>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: #0d1117;
-    color: #e6edf3;
-    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
-    min-height: 100vh;
-    padding: 24px;
+  :root {
+    --bg-void: #030303;
+    --bg-surface: #0a0a0f;
+    --bg-elevated: #111118;
+    --glass: rgba(255, 255, 255, 0.03);
+    --border: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(255, 255, 255, 0.15);
+    --text-primary: #e2e8f0;
+    --text-secondary: #475569;
+    --text-muted: #334155;
+    --gold: #d4af37;
+    --gold-dim: rgba(212, 175, 55, 0.15);
+    --green: #4ade80;
+    --green-dim: rgba(74, 222, 128, 0.1);
+    --red: #f87171;
+    --red-dim: rgba(248, 113, 113, 0.1);
+    --blue: #60a5fa;
+    --font-display: 'Playfair Display', serif;
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-ui: 'Outfit', sans-serif;
   }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background-color: var(--bg-void);
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* Atmospheric background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      radial-gradient(circle at 20% 30%, rgba(212, 175, 55, 0.04) 0%, transparent 50%),
+      radial-gradient(circle at 80% 70%, rgba(96, 165, 250, 0.03) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Subtle dot grid */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: radial-gradient(rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 32px 32px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  ::selection { background: var(--gold); color: var(--bg-void); }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 40px 24px;
+  }
+
+  /* Header */
   header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    margin-bottom: 32px;
-    flex-wrap: wrap;
-    gap: 12px;
+    align-items: flex-start;
+    margin-bottom: 48px;
+    animation: fadeInDown 0.8s ease-out both;
   }
-  header h1 {
-    font-size: 1.6rem;
+
+  .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+  }
+
+  .brand h1 {
+    font-family: var(--font-display);
+    font-size: 2.8rem;
     font-weight: 700;
-    color: #58a6ff;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    background: linear-gradient(180deg, #fff 0%, var(--text-secondary) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
-  .badge {
-    background: #161b22;
-    border: 1px solid #30363d;
-    border-radius: 8px;
-    padding: 6px 14px;
-    font-size: 0.8rem;
-    color: #8b949e;
-  }
-  .badge span { color: #58a6ff; font-weight: 600; }
 
-  /* Cards row */
-  .cards-row {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 12px;
-    margin-bottom: 28px;
-  }
-  .card {
-    background: #161b22;
-    border: 1px solid #30363d;
-    border-radius: 12px;
-    padding: 16px 20px;
-  }
-  .card-label { font-size: 0.72rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
-  .card-value { font-size: 1.5rem; font-weight: 700; color: #f0f6fc; }
-  .card-sub { font-size: 0.75rem; color: #58a6ff; margin-top: 2px; }
-  .card-value.red { color: #f85149; }
-  .card-value.green { color: #3fb950; }
-
-  /* Instruments table */
-  .section-title {
-    font-size: 1rem;
-    font-weight: 600;
-    color: #8b949e;
-    margin-bottom: 12px;
+  .brand-tag {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: var(--gold);
+    border: 1px solid var(--gold-dim);
+    padding: 4px 10px;
+    border-radius: 4px;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
   }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    background: #161b22;
-    border: 1px solid #30363d;
+
+  .status-group {
+    text-align: right;
+  }
+
+  .status-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--green);
+    margin-bottom: 8px;
+  }
+
+  .status-live::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    background: var(--green);
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse 2s infinite;
+  }
+
+  .status-time {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+  }
+
+  /* Section titles */
+  .section-label {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, var(--border) 0%, transparent 100%);
+  }
+
+  /* FX Cards - asymmetric composition */
+  .fx-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
     border-radius: 12px;
     overflow: hidden;
+    margin-bottom: 40px;
+    animation: fadeInUp 0.8s 0.1s ease-out both;
   }
-  th {
-    background: #1c2128;
-    color: #8b949e;
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    padding: 12px 16px;
-    text-align: right;
-    border-bottom: 1px solid #30363d;
-  }
-  th:first-child { text-align: left; }
-  td {
-    padding: 14px 16px;
-    font-size: 0.9rem;
-    text-align: right;
-    border-bottom: 1px solid #21262d;
-    color: #e6edf3;
-  }
-  td:first-child { text-align: left; font-weight: 600; }
-  tr:last-child td { border-bottom: none; }
-  tr:hover td { background: #1c2128; }
 
-  .sym-tag {
-    display: inline-block;
-    background: #21262d;
-    border: 1px solid #30363d;
-    border-radius: 6px;
-    padding: 3px 8px;
-    font-size: 0.8rem;
-    font-weight: 700;
-    font-family: 'Courier New', monospace;
-    color: #79c0ff;
+  .fx-card {
+    background: var(--bg-surface);
+    padding: 24px;
+    position: relative;
+    transition: background 0.3s ease;
   }
-  .tipo-badge {
-    display: inline-block;
-    font-size: 0.68rem;
-    padding: 2px 7px;
-    border-radius: 10px;
+
+  .fx-card:hover {
+    background: var(--bg-elevated);
+  }
+
+  .fx-card:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 20%;
+    bottom: 20%;
+    width: 1px;
+    background: var(--border);
+  }
+
+  .fx-name {
+    font-family: var(--font-ui);
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+  }
+
+  .fx-value {
+    font-family: var(--font-mono);
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+  }
+
+  .fx-value.gold { color: var(--gold); }
+  .fx-value.blue { color: var(--blue); }
+  .fx-value.red { color: var(--red); }
+  .fx-value.green { color: var(--green); }
+
+  .fx-sub {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  /* Context banners (REM/BADLAR) */
+  .context-strip {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 40px;
+    animation: fadeInUp 0.8s 0.2s ease-out both;
+  }
+
+  .context-card {
+    flex: 1;
+    background: var(--glass);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    backdrop-filter: blur(8px);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .context-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 3px;
+    height: 100%;
+  }
+
+  .context-card.rem::before { background: var(--blue); }
+  .context-card.badlar::before { background: var(--gold); }
+
+  .context-title {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+  }
+
+  .context-body {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .context-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .context-stat .label {
+    font-size: 0.65rem;
+    color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
-  .tipo-bono { background: #1f3a5f; color: #58a6ff; }
-  .tipo-letra { background: #3a2f1f; color: #d29922; }
 
-  .up { color: #3fb950; }
-  .down { color: #f85149; }
-  .flat { color: #8b949e; }
-  .mono { font-family: 'Courier New', monospace; font-size: 0.85rem; }
-  .vol { color: #8b949e; font-size: 0.8rem; }
-
-  .footer {
-    margin-top: 24px;
-    font-size: 0.72rem;
-    color: #484f58;
-    text-align: center;
-  }
-  .refresh-btn {
-    background: #238636;
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    padding: 6px 14px;
-    font-size: 0.78rem;
-    cursor: pointer;
+  .context-stat .value {
+    font-size: 1rem;
     font-weight: 600;
+    color: var(--text-primary);
   }
-  .refresh-btn:hover { background: #2ea043; }
+
+  /* Instruments */
+  .instruments-section {
+    animation: fadeInUp 0.8s 0.3s ease-out both;
+  }
+
+  .instruments-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 6px;
+  }
+
+  .instruments-table thead th {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    text-align: right;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .instruments-table thead th:first-child {
+    text-align: left;
+  }
+
+  .instruments-table tbody tr {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    cursor: default;
+  }
+
+  .instruments-table tbody tr:hover {
+    background: var(--bg-elevated);
+    transform: translateX(6px);
+    box-shadow: -4px 0 0 var(--gold-dim), 0 4px 24px rgba(0,0,0,0.4);
+    border-color: var(--border-strong);
+  }
+
+  .instruments-table tbody td {
+    padding: 18px 20px;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    text-align: right;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    color: var(--text-primary);
+  }
+
+  .instruments-table tbody td:first-child {
+    text-align: left;
+    border-left: 1px solid var(--border);
+    border-radius: 8px 0 0 8px;
+  }
+
+  .instruments-table tbody td:last-child {
+    border-right: 1px solid var(--border);
+    border-radius: 0 8px 8px 0;
+  }
+
+  .sym-tag {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--gold);
+    letter-spacing: 0.05em;
+  }
+
+  .tipo-badge {
+    font-family: var(--font-ui);
+    font-size: 0.6rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--glass);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+  }
+
+  .tipo-badge.letra { color: #d4af37; border-color: rgba(212, 175, 55, 0.2); }
+  .tipo-badge.bono { color: #60a5fa; border-color: rgba(96, 165, 250, 0.2); }
+
+  .up { color: var(--green); text-shadow: 0 0 10px var(--green-dim); }
+  .down { color: var(--red); text-shadow: 0 0 10px var(--red-dim); }
+  .flat { color: var(--text-secondary); }
+
+  .vol {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 400;
+  }
+
+  /* Footer */
+  .footer {
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    animation: fadeInUp 0.8s 0.5s ease-out both;
+  }
+
+  .refresh-btn {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .refresh-btn:hover {
+    border-color: var(--gold);
+    color: var(--gold);
+    background: var(--gold-dim);
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg-void); }
+  ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+  /* Animations */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes fadeInDown {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.9); }
+  }
+
+  @media (max-width: 900px) {
+    .fx-grid { grid-template-columns: repeat(2, 1fr); }
+    .context-strip { flex-direction: column; }
+    .brand h1 { font-size: 2rem; }
+    .instruments-table tbody td { padding: 14px 12px; font-size: 0.8rem; }
+  }
 
   @media (max-width: 640px) {
-    th, td { padding: 10px 8px; font-size: 0.8rem; }
-    .card-value { font-size: 1.2rem; }
+    header { flex-direction: column; gap: 20px; }
+    .status-group { text-align: left; }
+    .fx-grid { grid-template-columns: 1fr; }
+    .fx-card:not(:last-child)::after { display: none; }
+    .brand h1 { font-size: 1.6rem; }
+    .instruments-table thead { display: none; }
+    .instruments-table tbody tr { display: block; margin-bottom: 12px; }
+    .instruments-table tbody td {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      text-align: right;
+      border: none;
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+    }
+    .instruments-table tbody td:first-child,
+    .instruments-table tbody td:last-child {
+      border-radius: 0;
+      border-left: none;
+      border-right: none;
+    }
+    .instruments-table tbody td::before {
+      content: attr(data-label);
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+    }
   }
 </style>
 </head>
 <body>
 
-<header>
-  <h1>🇦🇷 Dollar Link AR</h1>
-  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-    <div class="badge">Actualizado: <span id="ts">—</span></div>
-    <button class="refresh-btn" onclick="loadData()">↻ Refrescar</button>
+<div class='container'>
+  <header>
+    <div class='brand'>
+      <h1>Dollar Link</h1>
+      <span class='brand-tag'>ARG · Tesoro Nacional</span>
+    </div>
+    <div class='status-group'>
+      <div class='status-live'>Mercado en vivo</div>
+      <div class='status-time' id='ts'>—</div>
+    </div>
+  </header>
+
+  <div class='section-label'>Tipos de Cambio</div>
+  <div class='fx-grid' id='cards-dolar'></div>
+
+  <div class='context-strip'>
+    <div class='context-card rem' id='rem-card' style='display:none'>
+      <div class='context-title'>Expectativas REM · BCRA</div>
+      <div class='context-body'>
+        <div class='context-stat'>
+          <span class='label'>Próximo Mes</span>
+          <span class='value' id='rem-mes'>—</span>
+        </div>
+        <div class='context-stat'>
+          <span class='label'>Próx. 12 Meses</span>
+          <span class='value' id='rem-12m'>—</span>
+        </div>
+        <div class='context-stat'>
+          <span class='label'>Fecha</span>
+          <span class='value' id='rem-fecha'>—</span>
+        </div>
+      </div>
+    </div>
+    <div class='context-card badlar' id='badlar-card' style='display:none'>
+      <div class='context-title'>Paridad de Tasas · BADLAR</div>
+      <div class='context-body'>
+        <div class='context-stat'>
+          <span class='label'>BADLAR ARS</span>
+          <span class='value' id='badlar-ars'>—</span>
+        </div>
+        <div class='context-stat'>
+          <span class='label'>Tasa USD</span>
+          <span class='value' id='badlar-usd'>—</span>
+        </div>
+        <div class='context-stat'>
+          <span class='label'>Fecha</span>
+          <span class='value' id='badlar-fecha'>—</span>
+        </div>
+      </div>
+    </div>
   </div>
-</header>
 
-<!-- Dólar Overview -->
-<div class="cards-row" id="cards-dolar"></div>
+  <div class='instruments-section'>
+    <div class='section-label'>Instrumentos</div>
+    <table class='instruments-table'>
+      <thead>
+        <tr>
+          <th>Instrumento</th>
+          <th>Tipo</th>
+          <th>Vto.</th>
+          <th>Último</th>
+          <th>Var%</th>
+          <th>Bid</th>
+          <th>Ask</th>
+          <th>USD Ofic.</th>
+          <th>USD MEP</th>
+          <th>USD CCL</th>
+          <th>Fair REM</th>
+          <th>Fair BADLAR</th>
+          <th>Vol.</th>
+        </tr>
+      </thead>
+      <tbody id='tbody'></tbody>
+    </table>
+  </div>
 
-<!-- REM Info -->
-<div id="rem-info" class="rem-banner" style="display:none; margin-bottom:24px; padding:12px 18px; background:#161b22; border:1px solid #30363d; border-radius:10px; font-size:0.82rem; color:#8b949e;">
-  <span style="color:#58a6ff;font-weight:600;">REM Inflación esperada:</span>
-  Mes próximo: <span id="rem-mes" style="color:#f0f6fc;font-family:'Courier New',monospace;">—</span>
-  &nbsp;|&nbsp;
-  Próx. 12 meses: <span id="rem-12m" style="color:#f0f6fc;font-family:'Courier New',monospace;">—</span>
-  &nbsp;|&nbsp;
-  <span style="font-size:0.72rem;">Fuente: BCRA REM · Actualizado: <span id="rem-fecha">—</span></span>
-</div>
-
-<!-- BADLAR Info -->
-<div id="badlar-info" style="display:none; margin-bottom:24px; padding:12px 18px; background:#161b22; border:1px solid #30363d; border-radius:10px; font-size:0.82rem; color:#8b949e;">
-  <span style="color:#d29922;font-weight:600;">Paridad de tasas (BADLAR):</span>
-  BADLAR (ARS): <span id="badlar-ars" style="color:#f0f6fc;font-family:'Courier New',monospace;">—</span>
-  &nbsp;|&nbsp;
-  Tasa USD: <span id="badlar-usd" style="color:#f0f6fc;font-family:'Courier New',monospace;">—</span>
-  &nbsp;|&nbsp;
-  <span style="font-size:0.72rem;">Fuente: BCRA · Actualizado: <span id="badlar-fecha">—</span></span>
-</div>
-
-<!-- Instruments Table -->
-<div class="section-title">📈 Instrumentos Dollar Link — Tesoro Nacional</div>
-<table id="tbl-instruments">
-  <thead>
-    <tr>
-      <th>Instrumento</th>
-      <th>Tipo</th>
-      <th>Vto.</th>
-      <th>Último (ARS)</th>
-      <th>Var%</th>
-      <th>Bid</th>
-      <th>Ask</th>
-      <th>USD Oficial</th>
-      <th>USD MEP</th>
-      <th>USD CCL</th>
-      <th>USD Fair (REM)</th>
-      <th>USD Fair (BADLAR)</th>
-      <th>Volumen</th>
-    </tr>
-  </thead>
-  <tbody id="tbody"></tbody>
-</table>
-
-<div class="footer">
-  Fuentes: Data912.com (market data educativo) · DolarAPI.com · No es asesoramiento financiero.
-  Los precios son referenciales y pueden variar.
+  <div class='footer'>
+    <span>Fuentes: Data912 · DolarAPI · BCRA. Datos referenciales.</span>
+    <button class='refresh-btn' onclick='loadData()'>↻ Refrescar</button>
+  </div>
 </div>
 
 <script>
-const INSTRUMENTS = ["D30A6","D30S6","TZV26","TZV27","TZV28"];
+const INSTRUMENTS = ['D30A6','D30S6','TZV26','TZV27','TZV28'];
 
 function fmt(n) {
-  if (n == null || isNaN(n)) return "—";
-  return n.toLocaleString("es-AR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  if (n == null || isNaN(n)) return '—';
+  return n.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 }
 function fmtVol(n) {
-  if (!n) return "—";
-  if (n >= 1e9) return (n/1e9).toFixed(1) + "B";
-  if (n >= 1e6) return (n/1e6).toFixed(1) + "M";
-  if (n >= 1e3) return (n/1e3).toFixed(0) + "K";
+  if (!n) return '—';
+  if (n >= 1e9) return (n/1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n/1e3).toFixed(0) + 'K';
   return n;
 }
 function pctClass(p) {
-  if (p == null) return "flat";
-  if (p > 0) return "up";
-  if (p < 0) return "down";
-  return "flat";
+  if (p == null) return 'flat';
+  if (p > 0) return 'up';
+  if (p < 0) return 'down';
+  return 'flat';
 }
 function pctSign(p) {
-  if (p == null) return "—";
-  return (p >= 0 ? "+" : "") + p.toFixed(2) + "%";
+  if (p == null) return '—';
+  return (p >= 0 ? '+' : '') + p.toFixed(2) + '%';
 }
 function tsLocal(iso) {
-  if (!iso) return "—";
+  if (!iso) return '—';
   try {
-    return new Date(iso).toLocaleString("es-AR", {hour:"2-digit",minute:"2-digit",second:"2-digit",day:"2-digit",month:"2-digit"});
+    return new Date(iso).toLocaleString('es-AR', {hour:'2-digit',minute:'2-digit',second:'2-digit',day:'2-digit',month:'2-digit'});
   } catch(e) { return iso; }
 }
 
 function renderDolarCards(dolares) {
-  const tipoLabel = {"oficial":"Dólar Oficial","Bolsa":"Dólar MEP","contadoconliqui":"CCL","blue":"Blue"};
-  const tipoColor = {"oficial":"#3fb950","Bolsa":"#58a6ff","contadoconliqui":"#f85149","blue":"#d29922"};
-  let html = "";
+  const tipoLabel = {'oficial':'Dólar Oficial','Bolsa':'Dólar MEP','contadoconliqui':'Dólar CCL','blue':'Dólar Blue'};
+  const tipoColorClass = {'oficial':'gold','Bolsa':'blue','contadoconliqui':'red','blue':'green'};
+  let html = '';
   for (const [k,v] of Object.entries(dolares)) {
     const lbl = tipoLabel[k] || k;
-    const color = tipoColor[k] || "#8b949e";
-    html += `<div class="card">
-      <div class="card-label">${lbl}</div>
-      <div class="card-value" style="color:${color}">$${fmt(v.venta)}</div>
-      <div class="card-sub">Compra: $${fmt(v.compra)}</div>
+    const color = tipoColorClass[k] || '';
+    html += `<div class='fx-card'>
+      <div class='fx-name'>${lbl}</div>
+      <div class='fx-value ${color}'>$${fmt(v.venta)}</div>
+      <div class='fx-sub'>Compra $${fmt(v.compra)}</div>
     </div>`;
   }
-  document.getElementById("cards-dolar").innerHTML = html;
+  document.getElementById('cards-dolar').innerHTML = html;
 }
 
 function renderInstruments(data) {
-  document.getElementById("ts").textContent = tsLocal(data.timestamp);
-
-  let html = "";
+  document.getElementById('ts').textContent = tsLocal(data.timestamp);
+  let html = '';
   for (const row of data.instruments) {
     const pct = row.pct_change;
     const pClass = pctClass(pct);
-    const tipoBadge = row.tipo === "bono"
-      ? `<span class="tipo-badge tipo-bono">Bono</span>`
-      : `<span class="tipo-badge tipo-letra">Letra</span>`;
+    const tipoClass = row.tipo === 'bono' ? 'bono' : 'letra';
+    const tipoLabel = row.tipo === 'bono' ? 'Bono' : 'Letra';
     html += `<tr>
-      <td><span class="sym-tag">${row.symbol}</span></td>
-      <td>${tipoBadge}</td>
-      <td class="mono" style="color:#8b949e;">${row.maturity || "—"}</td>
-      <td class="mono">$${fmt(row.last)}</td>
-      <td class="${pClass}">${pctSign(pct)}</td>
-      <td class="mono">$${fmt(row.bid)}</td>
-      <td class="mono">$${fmt(row.ask)}</td>
-      <td class="mono">${row.usd_price_oficial != null ? "USD " + fmt(row.usd_price_oficial) : "—"}</td>
-      <td class="mono">${row.usd_price_mep != null ? "USD " + fmt(row.usd_price_mep) : "—"}</td>
-      <td class="mono">${row.usd_price_ccl != null ? "USD " + fmt(row.usd_price_ccl) : "—"}</td>
-      <td class="mono" style="color:#f0883e;">${row.usd_fair_value_rem != null ? "USD " + fmt(row.usd_fair_value_rem) : "—"}</td>
-      <td class="mono" style="color:#d29922;">${row.usd_fair_value_badlar != null ? "USD " + fmt(row.usd_fair_value_badlar) : "—"}</td>
-      <td class="vol">${fmtVol(row.volume)}</td>
+      <td data-label='Inst.'><span class='sym-tag'>${row.symbol}</span></td>
+      <td data-label='Tipo'><span class='tipo-badge ${tipoClass}'>${tipoLabel}</span></td>
+      <td data-label='Vto.' class='vol'>${row.maturity || '—'}</td>
+      <td data-label='Último'>$${fmt(row.last)}</td>
+      <td data-label='Var%' class='${pClass}'>${pctSign(pct)}</td>
+      <td data-label='Bid'>$${fmt(row.bid)}</td>
+      <td data-label='Ask'>$${fmt(row.ask)}</td>
+      <td data-label='USD Ofic.'>${row.usd_price_oficial != null ? 'USD ' + fmt(row.usd_price_oficial) : '—'}</td>
+      <td data-label='USD MEP'>${row.usd_price_mep != null ? 'USD ' + fmt(row.usd_price_mep) : '—'}</td>
+      <td data-label='USD CCL'>${row.usd_price_ccl != null ? 'USD ' + fmt(row.usd_price_ccl) : '—'}</td>
+      <td data-label='Fair REM' style='color:var(--blue)'>${row.usd_fair_value_rem != null ? 'USD ' + fmt(row.usd_fair_value_rem) : '—'}</td>
+      <td data-label='Fair BADLAR' style='color:var(--gold)'>${row.usd_fair_value_badlar != null ? 'USD ' + fmt(row.usd_fair_value_badlar) : '—'}</td>
+      <td data-label='Vol.' class='vol'>${fmtVol(row.volume)}</td>
     </tr>`;
   }
-  document.getElementById("tbody").innerHTML = html;
+  document.getElementById('tbody').innerHTML = html;
 }
 
 async function loadData() {
   try {
-    const r = await fetch("/api/dollar-link");
+    const r = await fetch('/api/dollar-link');
     const data = await r.json();
     renderInstruments(data);
-    const resDol = await fetch("/api/market-summary");
+    const resDol = await fetch('/api/market-summary');
     const dol = await resDol.json();
     renderDolarCards(dol);
 
-    // REM banner
     const rem = data.rem || {};
-    const remEl = document.getElementById("rem-info");
+    const remEl = document.getElementById('rem-card');
     if (remEl) {
-      remEl.style.display = "block";
-      const mesEl = document.getElementById("rem-mes");
-      const m12El = document.getElementById("rem-12m");
-      const fecEl = document.getElementById("rem-fecha");
-      if (mesEl) mesEl.textContent = rem.inflacion_mes_siguiente != null ? rem.inflacion_mes_siguiente.toFixed(1) + "%" : "—";
-      if (m12El) m12El.textContent = rem.inflacion_prox_12_meses != null ? rem.inflacion_prox_12_meses.toFixed(1) + "%" : "—";
-      if (fecEl) fecEl.textContent = rem.fecha || "—";
+      remEl.style.display = 'block';
+      document.getElementById('rem-mes').textContent = rem.inflacion_mes_siguiente != null ? rem.inflacion_mes_siguiente.toFixed(1) + '%' : '—';
+      document.getElementById('rem-12m').textContent = rem.inflacion_prox_12_meses != null ? rem.inflacion_prox_12_meses.toFixed(1) + '%' : '—';
+      document.getElementById('rem-fecha').textContent = rem.fecha || '—';
     }
 
-    // BADLAR banner
     const badlar = data.badlar || {};
-    const badlarEl = document.getElementById("badlar-info");
+    const badlarEl = document.getElementById('badlar-card');
     if (badlarEl) {
-      badlarEl.style.display = "block";
-      const arsEl = document.getElementById("badlar-ars");
-      const usdEl = document.getElementById("badlar-usd");
-      const fecEl = document.getElementById("badlar-fecha");
-      if (arsEl) arsEl.textContent = badlar.tasa_ars != null ? badlar.tasa_ars.toFixed(2) + "%" : "—";
-      if (usdEl) usdEl.textContent = badlar.tasa_usd != null ? badlar.tasa_usd.toFixed(1) + "%" : "—";
-      if (fecEl) fecEl.textContent = badlar.fecha || "—";
+      badlarEl.style.display = 'block';
+      document.getElementById('badlar-ars').textContent = badlar.tasa_ars != null ? badlar.tasa_ars.toFixed(2) + '%' : '—';
+      document.getElementById('badlar-usd').textContent = badlar.tasa_usd != null ? badlar.tasa_usd.toFixed(1) + '%' : '—';
+      document.getElementById('badlar-fecha').textContent = badlar.fecha || '—';
     }
   } catch(e) {
     console.error(e);
-    document.getElementById("tbody").innerHTML = `<tr><td colspan="12" style="text-align:center;color:#f85149;padding:20px;">Error al cargar datos: ${e.message}</td></tr>`;
+    document.getElementById('tbody').innerHTML = `<tr><td colspan='13' style='text-align:center;color:var(--red);padding:40px;border:none;'>Error al cargar datos: ${e.message}</td></tr>`;
   }
 }
 
-// Auto-refresh
 loadData();
 setInterval(loadData, 60 * 1000);
 </script>

@@ -32,7 +32,16 @@ DOLAR_API_BASE = "https://dolarapi.com"
 BCRA_API_BASE = "https://api.bcra.gob.ar/estadisticas/v4.0"
 
 # ── Instrumentos Dollar Link a trackear ──────────────────────────────────────
-DL_INSTRUMENTS = ["D30A6", "D30S6", "TZV26", "TZV27", "TZV28", "TZV7D"]
+DL_INSTRUMENTS = ["D30A6", "D30S6", "TZV26", "TZV27", "TZV28"]
+
+# ── Vencimientos (dd/mm/aaaa) — fuente: Ministerio de Economía Argentina ───────
+VENCIMIENTOS = {
+    "D30A6": "30/06/2026",
+    "D30S6": "30/06/2026",
+    "TZV26": "31/03/2026",
+    "TZV27": "31/03/2027",
+    "TZV28": "31/03/2028",
+}
 
 # ── Funciones de fetch ────────────────────────────────────────────────────────
 
@@ -90,39 +99,44 @@ def get_dolar_types() -> dict:
     return result
 
 
+def fetch_bcra_variable(var_id: int, max_entries: int = 5) -> list:
+    """Trae entries de una variable BCRA v4.0. Sin query params — filtra client-side."""
+    data = fetch_json(f"{BCRA_API_BASE}/monetarias/{var_id}", timeout=15)
+    if data and data.get("results"):
+        return data["results"][0].get("detalle", [])[:max_entries]
+    return []
+
+
 def fetch_rem_inflacion() -> dict:
-    """Trae expectativas de inflación del REM (BCRA).
-    ID 29 = Mediana variación interanual IPC próximos 12 meses (REM).
-    Retorna {mes_siguiente, tc_actual, prox_12_meses} con valores en %.
-    """
+    """Expectativas de inflación del REM (BCRA)."""
     result = {"mes_siguiente": None, "prox_12_meses": None, "ultimo_rem": None, "fecha": None}
     try:
-        # ID 29: REM mediana interanual próximos 12 meses
-        url = f"{BCRA_API_BASE}/monetarias/29?limit=3"
-        data = fetch_json(url, timeout=15)
-        if data and data.get("results"):
-            entries = data["results"][0].get("detalle", [])
-            if entries:
-                latest = entries[0]
-                result["prox_12_meses"] = latest.get("valor")
-                result["fecha"] = latest.get("fecha")
+        entries = fetch_bcra_variable(29, 3)
+        if entries:
+            result["prox_12_meses"] = entries[0].get("valor")
+            result["fecha"] = entries[0].get("fecha")
     except Exception:
         pass
-
     try:
-        # ID 27: Inflación mensual IPC (mes siguiente)
-        url2 = f"{BCRA_API_BASE}/monetarias/27?limit=2"
-        data2 = fetch_json(url2, timeout=15)
-        if data2 and data2.get("results"):
-            entries2 = data2["results"][0].get("detalle", [])
-            if len(entries2) > 1:
-                result["mes_siguiente"] = entries2[1].get("valor")
-            elif entries2:
-                result["mes_siguiente"] = entries2[0].get("valor")
+        entries = fetch_bcra_variable(27, 2)
+        if entries:
+            result["mes_siguiente"] = entries[0].get("valor")
     except Exception:
         pass
-
     return result
+
+
+def fetch_badlar() -> dict:
+    """Trae última BADLAR bancos privados (ID 7) y tasa USD implícita (~5%)."""
+    BADLAR_USD = 5.0  # Tasa anual USD aprox (Fed Funds ~5%)
+    entries = fetch_bcra_variable(7, 3)
+    if not entries:
+        return {"badlar": None, "tasa_usd": BADLAR_USD, "fecha": None}
+    return {
+        "badlar": entries[0].get("valor"),
+        "tasa_usd": BADLAR_USD,
+        "fecha": entries[0].get("fecha"),
+    }
 
 
 def assemble_dollar_link_data() -> dict:
@@ -141,6 +155,11 @@ def assemble_dollar_link_data() -> dict:
     rem = fetch_rem_inflacion()
     prox_12_meses = rem.get("prox_12_meses")  # % inflación esperada 12m
 
+    # BADLAR tasa
+    badlar_data = fetch_badlar()
+    badlar = badlar_data.get("badlar")  # % anual
+    tasa_usd = badlar_data.get("tasa_usd", 5.0)  # % anual USD
+
     rows = []
     for sym in DL_INSTRUMENTS:
         item = all_data.get(sym, {})
@@ -156,6 +175,8 @@ def assemble_dollar_link_data() -> dict:
                 "usd_price_mep": None,
                 "usd_price_ccl": None,
                 "usd_fair_value_rem": None,
+                "usd_fair_value_badlar": None,
+                "maturity": VENCIMIENTOS.get(sym),
                 "tipo": "bono" if sym.startswith("TZV") else "letra",
             })
             continue
@@ -170,12 +191,20 @@ def assemble_dollar_link_data() -> dict:
         usd_mep = round(last / mep, 2) if mep else None
         usd_ccl = round(last / ccl, 2) if ccl else None
 
-        # Fair value: con devaluación esperada del REM, el TC sube y el USD price baja
-        # fair_usd = usd_oficial / (1 + inf_rem/100)
+        # Fair value con REM: divide por (1 + inf_12m/100)
         if usd_oficial and prox_12_meses:
-            usd_fair = round(usd_oficial / (1 + prox_12_meses / 100), 2)
+            usd_fair_rem = round(usd_oficial / (1 + prox_12_meses / 100), 2)
         else:
-            usd_fair = None
+            usd_fair_rem = None
+
+        # Fair value con BADLAR: paridad descubierta de tasas
+        # forward_rate = oficial * (1 + badlar/100)^(6/12) / (1 + tasa_usd/100)^(6/12)
+        if usd_oficial and badlar and tasa_usd:
+            forward_factor = ((1 + badlar / 100) ** 0.5) / ((1 + tasa_usd / 100) ** 0.5)
+            forward_rate = dolar_oficial_venta * forward_factor
+            usd_fair_badlar = round(last / forward_rate, 2) if forward_rate else None
+        else:
+            usd_fair_badlar = None
 
         rows.append({
             "symbol": sym,
@@ -187,7 +216,9 @@ def assemble_dollar_link_data() -> dict:
             "usd_price_oficial": usd_oficial,
             "usd_price_mep": usd_mep,
             "usd_price_ccl": usd_ccl,
-            "usd_fair_value_rem": usd_fair,
+            "usd_fair_value_rem": usd_fair_rem,
+            "usd_fair_value_badlar": usd_fair_badlar,
+            "maturity": VENCIMIENTOS.get(sym),
             "tipo": "bono" if sym.startswith("TZV") else "letra",
         })
 
@@ -205,6 +236,11 @@ def assemble_dollar_link_data() -> dict:
             "inflacion_mes_siguiente": rem.get("mes_siguiente"),
             "inflacion_prox_12_meses": prox_12_meses,
             "fecha": rem.get("fecha"),
+        },
+        "badlar": {
+            "tasa_ars": badlar,
+            "tasa_usd": tasa_usd,
+            "fecha": badlar_data.get("fecha"),
         },
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
@@ -418,6 +454,16 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <span style="font-size:0.72rem;">Fuente: BCRA REM · Actualizado: <span id="rem-fecha">—</span></span>
 </div>
 
+<!-- BADLAR Info -->
+<div id="badlar-info" style="display:none; margin-bottom:24px; padding:12px 18px; background:#161b22; border:1px solid #30363d; border-radius:10px; font-size:0.82rem; color:#8b949e;">
+  <span style="color:#d29922;font-weight:600;">Paridad de tasas (BADLAR):</span>
+  BADLAR (ARS): <span id="badlar-ars" style="color:#f0f6fc;font-family:'Courier New',monospace;">—</span>
+  &nbsp;|&nbsp;
+  Tasa USD: <span id="badlar-usd" style="color:#f0f6fc;font-family:'Courier New',monospace;">—</span>
+  &nbsp;|&nbsp;
+  <span style="font-size:0.72rem;">Fuente: BCRA · Actualizado: <span id="badlar-fecha">—</span></span>
+</div>
+
 <!-- Instruments Table -->
 <div class="section-title">📈 Instrumentos Dollar Link — Tesoro Nacional</div>
 <table id="tbl-instruments">
@@ -425,6 +471,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <tr>
       <th>Instrumento</th>
       <th>Tipo</th>
+      <th>Vto.</th>
       <th>Último (ARS)</th>
       <th>Var%</th>
       <th>Bid</th>
@@ -433,6 +480,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <th>USD MEP</th>
       <th>USD CCL</th>
       <th>USD Fair (REM)</th>
+      <th>USD Fair (BADLAR)</th>
       <th>Volumen</th>
     </tr>
   </thead>
@@ -445,7 +493,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 </div>
 
 <script>
-const INSTRUMENTS = ["D30A6","D30S6","TZV26","TZV27","TZV28","TZV7D"];
+const INSTRUMENTS = ["D30A6","D30S6","TZV26","TZV27","TZV28"];
 
 function fmt(n) {
   if (n == null || isNaN(n)) return "—";
@@ -504,6 +552,7 @@ function renderInstruments(data) {
     html += `<tr>
       <td><span class="sym-tag">${row.symbol}</span></td>
       <td>${tipoBadge}</td>
+      <td class="mono" style="color:#8b949e;">${row.maturity || "—"}</td>
       <td class="mono">$${fmt(row.last)}</td>
       <td class="${pClass}">${pctSign(pct)}</td>
       <td class="mono">$${fmt(row.bid)}</td>
@@ -511,7 +560,8 @@ function renderInstruments(data) {
       <td class="mono">${row.usd_price_oficial != null ? "USD " + fmt(row.usd_price_oficial) : "—"}</td>
       <td class="mono">${row.usd_price_mep != null ? "USD " + fmt(row.usd_price_mep) : "—"}</td>
       <td class="mono">${row.usd_price_ccl != null ? "USD " + fmt(row.usd_price_ccl) : "—"}</td>
-      <td class="mono">${row.usd_fair_value_rem != null ? "USD " + fmt(row.usd_fair_value_rem) : "—"}</td>
+      <td class="mono" style="color:#f0883e;">${row.usd_fair_value_rem != null ? "USD " + fmt(row.usd_fair_value_rem) : "—"}</td>
+      <td class="mono" style="color:#d29922;">${row.usd_fair_value_badlar != null ? "USD " + fmt(row.usd_fair_value_badlar) : "—"}</td>
       <td class="vol">${fmtVol(row.volume)}</td>
     </tr>`;
   }
@@ -539,9 +589,22 @@ async function loadData() {
       if (m12El) m12El.textContent = rem.inflacion_prox_12_meses != null ? rem.inflacion_prox_12_meses.toFixed(1) + "%" : "—";
       if (fecEl) fecEl.textContent = rem.fecha || "—";
     }
+
+    // BADLAR banner
+    const badlar = data.badlar || {};
+    const badlarEl = document.getElementById("badlar-info");
+    if (badlarEl) {
+      badlarEl.style.display = "block";
+      const arsEl = document.getElementById("badlar-ars");
+      const usdEl = document.getElementById("badlar-usd");
+      const fecEl = document.getElementById("badlar-fecha");
+      if (arsEl) arsEl.textContent = badlar.tasa_ars != null ? badlar.tasa_ars.toFixed(2) + "%" : "—";
+      if (usdEl) usdEl.textContent = badlar.tasa_usd != null ? badlar.tasa_usd.toFixed(1) + "%" : "—";
+      if (fecEl) fecEl.textContent = badlar.fecha || "—";
+    }
   } catch(e) {
     console.error(e);
-    document.getElementById("tbody").innerHTML = `<tr><td colspan="11" style="text-align:center;color:#f85149;padding:20px;">Error al cargar datos: ${e.message}</td></tr>`;
+    document.getElementById("tbody").innerHTML = `<tr><td colspan="12" style="text-align:center;color:#f85149;padding:20px;">Error al cargar datos: ${e.message}</td></tr>`;
   }
 }
 
